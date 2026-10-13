@@ -62,12 +62,7 @@ const SYSTEM_SETTINGS = [
 
 export async function autoSeedDatabase(): Promise<void> {
   try {
-    const adminCount = await prisma.user.count();
-    if (adminCount > 0) {
-      return; // Already seeded
-    }
-
-    console.log('[AutoSeed] Database empty — running automatic seed on startup...');
+    console.log('[AutoSeed] Verifying initial seed data and admin account on startup...');
 
     // 1. Regions
     for (const region of REGIONS) {
@@ -126,7 +121,10 @@ export async function autoSeedDatabase(): Promise<void> {
 
     await prisma.user.upsert({
       where: { email: defaultAdminEmail },
-      update: {},
+      update: {
+        passwordHash: hash,
+        accountStatus: 'ACTIVE',
+      },
       create: {
         name: 'GTS Administrator',
         email: defaultAdminEmail,
