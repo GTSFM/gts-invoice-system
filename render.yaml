@@ -41,7 +41,7 @@ services:
     name: gts-invoice-frontend
     runtime: static
     rootDir: frontend
-    buildCommand: npm install --include=dev && npm run build
+    buildCommand: chmod -R +x node_modules/.bin || true; npm install --include=dev && chmod -R +x node_modules/.bin || true; npm run build
     staticPublishPath: dist
     routes:
       - type: rewrite
