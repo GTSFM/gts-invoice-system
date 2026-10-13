@@ -1,0 +1,821 @@
+// GTS Invoice-to-Collection Management System
+// Prisma Schema v1.0.0
+// PostgreSQL — all monetary fields use Decimal(15,2)
+// Timestamps stored in UTC; application layer converts to IST for display
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  CENTRAL_BILLING
+  REGIONAL_OPERATIONS
+  FINANCE_COLLECTIONS
+  MANAGEMENT
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum EntityStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum InvoiceStatus {
+  PROJECTION_PENDING
+  BILLING_INPUT_PENDING
+  DRAFT
+  DOCUMENTS_PENDING
+  INTERNAL_REVIEW
+  APPROVED_FOR_SUBMISSION
+  READY_FOR_SUBMISSION
+  SUBMITTED_TO_CLIENT
+  ACKNOWLEDGEMENT_PENDING
+  ACKNOWLEDGED
+  DISPUTED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+  ON_HOLD
+}
+
+enum SubmissionStatus {
+  ON_TIME
+  EARLY
+  LATE
+  DUE_SOON
+  OVERDUE_NOT_SUBMITTED
+  TARGET_NOT_CONFIGURED
+}
+
+enum PaymentMode {
+  NEFT
+  RTGS
+  IMPS
+  CHEQUE
+  DEMAND_DRAFT
+  ONLINE_PORTAL
+  CASH
+  OTHER
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  ARCHIVE
+  RESTORE
+  LOGIN
+  LOGOUT
+  EXPORT
+  IMPORT
+  STATUS_CHANGE
+  APPROVE
+  REJECT
+  CANCEL
+  REVISE
+}
+
+enum NotificationChannel {
+  EMAIL
+  IN_APP
+  BOTH
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum PaymentTermsTrigger {
+  INVOICE_DATE
+  SUBMISSION_DATE
+  ACKNOWLEDGEMENT_DATE
+}
+
+enum StorageProvider {
+  CLOUDINARY
+  S3
+  LOCAL
+}
+
+enum ImportJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  PARTIALLY_COMPLETED
+}
+
+enum EmailSyncStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  PENDING_SETUP
+}
+
+// ─── USERS & AUTH ─────────────────────────────────────────────────────────────
+
+model User {
+  id                   String        @id @default(uuid())
+  name                 String
+  email                String        @unique
+  passwordHash         String?
+  department           String?
+  designation          String?
+  role                 UserRole
+  accountStatus        AccountStatus @default(PENDING)
+  microsoftUserId      String?       @unique
+  microsoftEmail       String?
+  m365Connected        Boolean       @default(false)
+  m365ConnectedAt      DateTime?
+  lastLoginAt          DateTime?
+  refreshToken         String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  createdById          String?
+  isDemo               Boolean       @default(false)
+
+  regionAssignments    UserRegionAssignment[]
+  siteAssignments      UserSiteAssignment[]
+  createdInvoices      Invoice[]             @relation("InvoiceCreatedBy")
+  reviewedInvoices     Invoice[]             @relation("InvoiceReviewedBy")
+  projections          BillingProjection[]   @relation("ProjectionCreatedBy")
+  revisions            ProjectionRevision[]  @relation("RevisionCreatedBy")
+  receiptsRecorded     PaymentReceipt[]      @relation("ReceiptRecordedBy")
+  followupsCreated     CollectionFollowup[]  @relation("FollowupCreatedBy")
+  auditLogs            AuditLog[]            @relation("AuditUser")
+  emailIntegration     EmailIntegration?
+  importJobsCreated    ImportJob[]           @relation("ImportJobCreatedBy")
+  notificationLogsUser NotificationLog[]     @relation("NotificationUser")
+
+  @@index([email])
+  @@index([role])
+  @@index([accountStatus])
+  @@map("users")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  module      String
+  createdAt   DateTime @default(now())
+
+  rolePermissions RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  role         UserRole
+  permissionId String
+  granted      Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([role, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRegionAssignment {
+  id        String   @id @default(uuid())
+  userId    String
+  regionId  String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+  region    Region   @relation(fields: [regionId], references: [id])
+
+  @@unique([userId, regionId])
+  @@map("user_region_assignments")
+}
+
+model UserSiteAssignment {
+  id        String   @id @default(uuid())
+  userId    String
+  siteId    String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+  site      Site     @relation(fields: [siteId], references: [id])
+
+  @@unique([userId, siteId])
+  @@map("user_site_assignments")
+}
+
+// ─── MASTER DATA ──────────────────────────────────────────────────────────────
+
+model Client {
+  id                   String       @id @default(uuid())
+  clientCode           String       @unique
+  name                 String
+  billingAddress       String?
+  gstin                String?
+  billingContactName   String?
+  billingContactEmail  String?
+  paymentTermsDays     Int          @default(30)
+  paymentTermsTrigger  PaymentTermsTrigger @default(SUBMISSION_DATE)
+  contractStartDate    DateTime?
+  contractEndDate      DateTime?
+  currency             String       @default("INR")
+  status               EntityStatus @default(ACTIVE)
+  remarks              String?
+  isDemo               Boolean      @default(false)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  createdById          String?
+
+  sites                Site[]
+  contracts            Contract[]
+  invoices             Invoice[]
+  projections          BillingProjection[]
+  paymentTermsOverride PaymentTermsOverride[]
+
+  @@index([clientCode])
+  @@index([status])
+  @@map("clients")
+}
+
+model Region {
+  id                    String       @id @default(uuid())
+  regionCode            String       @unique
+  name                  String
+  regionalManager       String?
+  regionalOpsEmail      String?
+  billingTeamEmail      String?
+  financeContactEmail   String?
+  escalationEmail       String?
+  status                EntityStatus @default(ACTIVE)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  createdById           String?
+
+  sites                 Site[]
+  userAssignments       UserRegionAssignment[]
+  invoices              Invoice[]
+  projections           BillingProjection[]
+
+  @@index([regionCode])
+  @@index([status])
+  @@map("regions")
+}
+
+model Site {
+  id                    String       @id @default(uuid())
+  siteCode              String       @unique
+  name                  String
+  clientId              String
+  regionId              String
+  city                  String?
+  state                 String?
+  billingContactName    String?
+  billingContactEmail   String?
+  regionalOpsOwner      String?
+  billingOwner          String?
+  paymentTermsDays      Int?         // null = inherit from client
+  paymentTermsTrigger   PaymentTermsTrigger?
+  gstTreatment          String?
+  contractReference     String?
+  contractStartDate     DateTime?
+  contractEndDate       DateTime?
+  monthlyProjectionBase Decimal?     @db.Decimal(15, 2)
+  submissionTargetDay   Int?         // day-of-month for target; null = manual
+  submissionOffsetDays  Int?         // offset from month-start/end
+  status                EntityStatus @default(ACTIVE)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  createdById           String?
+
+  client                Client       @relation(fields: [clientId], references: [id])
+  region                Region       @relation(fields: [regionId], references: [id])
+  userAssignments       UserSiteAssignment[]
+  contracts             Contract[]
+  invoices              Invoice[]
+  projections           BillingProjection[]
+  submissionTargets     SubmissionTarget[]
+
+  @@index([clientId])
+  @@index([regionId])
+  @@index([status])
+  @@map("sites")
+}
+
+model Contract {
+  id                    String       @id @default(uuid())
+  contractNumber        String       @unique
+  clientId              String
+  siteId                String?
+  contractType          String?
+  startDate             DateTime
+  endDate               DateTime?
+  scopeDescription      String?
+  paymentTermsDays      Int?
+  paymentTermsTrigger   PaymentTermsTrigger?
+  currency              String       @default("INR")
+  status                EntityStatus @default(ACTIVE)
+  documentUrl           String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  createdById           String?
+
+  client                Client       @relation(fields: [clientId], references: [id])
+  site                  Site?        @relation(fields: [siteId], references: [id])
+  invoices              Invoice[]
+
+  @@index([clientId])
+  @@map("contracts")
+}
+
+// ─── BILLING PROJECTIONS ──────────────────────────────────────────────────────
+
+model BillingProjection {
+  id                    String       @id @default(uuid())
+  financialYear         String       // e.g. "2025-26"
+  billingMonth          String       // e.g. "2025-06" (YYYY-MM)
+  clientId              String
+  regionId              String
+  siteId                String
+  contractReference     String?
+  projectedAmountExGst  Decimal      @db.Decimal(15, 2)
+  projectedGst          Decimal?     @db.Decimal(15, 2)
+  projectedTotal        Decimal      @db.Decimal(15, 2)
+  isZeroProjection      Boolean      @default(false)
+  zeroReason            String?
+  isApproved            Boolean      @default(false)
+  approvedAt            DateTime?
+  approvedById          String?
+  isLocked              Boolean      @default(false)
+  remarks               String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  createdById           String?
+  lastRevisedById       String?
+  lastRevisedAt         DateTime?
+
+  client                Client       @relation(fields: [clientId], references: [id])
+  region                Region       @relation(fields: [regionId], references: [id])
+  site                  Site         @relation(fields: [siteId], references: [id])
+  createdBy             User?        @relation("ProjectionCreatedBy", fields: [createdById], references: [id])
+  revisions             ProjectionRevision[]
+  invoices              Invoice[]    @relation("InvoiceProjection")
+
+  @@unique([siteId, billingMonth])
+  @@index([financialYear])
+  @@index([billingMonth])
+  @@index([clientId])
+  @@index([regionId])
+  @@map("billing_projections")
+}
+
+model ProjectionRevision {
+  id                    String    @id @default(uuid())
+  projectionId          String
+  previousAmountExGst   Decimal   @db.Decimal(15, 2)
+  previousGst           Decimal?  @db.Decimal(15, 2)
+  previousTotal         Decimal   @db.Decimal(15, 2)
+  newAmountExGst        Decimal   @db.Decimal(15, 2)
+  newGst                Decimal?  @db.Decimal(15, 2)
+  newTotal              Decimal   @db.Decimal(15, 2)
+  revisionReason        String
+  revisionReasonCode    String?
+  createdAt             DateTime  @default(now())
+  createdById           String?
+
+  projection            BillingProjection @relation(fields: [projectionId], references: [id])
+  createdBy             User?     @relation("RevisionCreatedBy", fields: [createdById], references: [id])
+
+  @@index([projectionId])
+  @@map("projection_revisions")
+}
+
+// ─── INVOICES ─────────────────────────────────────────────────────────────────
+
+model Invoice {
+  id                       String        @id @default(uuid())
+  invoiceNumber            String
+  clientId                 String
+  regionId                 String
+  siteId                   String
+  contractId               String?
+  projectionId             String?
+  financialYear            String
+  billingMonth             String        // YYYY-MM
+  invoiceDate              DateTime?
+  billingPeriodStart       DateTime?
+  billingPeriodEnd         DateTime?
+  amountExGst              Decimal?      @db.Decimal(15, 2)
+  gstAmount                Decimal?      @db.Decimal(15, 2)
+  totalAmount              Decimal?      @db.Decimal(15, 2)
+  currency                 String        @default("INR")
+  status                   InvoiceStatus @default(DRAFT)
+  preparedById             String?
+  preparedAt               DateTime?
+  reviewedById             String?
+  reviewedAt               DateTime?
+  submissionTargetDate     DateTime?
+  actualSubmissionDate     DateTime?
+  submissionReference      String?
+  submissionChannel        String?
+  submissionProofUrl       String?
+  clientAcknowledgementDate DateTime?
+  paymentTermsDays         Int?
+  paymentTermsTrigger      PaymentTermsTrigger?
+  dueDate                  DateTime?
+  totalReceived            Decimal       @default(0) @db.Decimal(15, 2)
+  outstandingAmount        Decimal?      @db.Decimal(15, 2)
+  lastReceiptDate          DateTime?
+  collectionOwnerId        String?
+  lastFollowupDate         DateTime?
+  nextFollowupDate         DateTime?
+  remarks                  String?
+  internalNotes            String?
+  isCancelled              Boolean       @default(false)
+  cancelledAt              DateTime?
+  cancelledById            String?
+  cancellationReason       String?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+  createdById              String?
+
+  client                   Client        @relation(fields: [clientId], references: [id])
+  region                   Region        @relation(fields: [regionId], references: [id])
+  site                     Site          @relation(fields: [siteId], references: [id])
+  contract                 Contract?     @relation(fields: [contractId], references: [id])
+  projection               BillingProjection? @relation("InvoiceProjection", fields: [projectionId], references: [id])
+  preparedBy               User?         @relation("InvoiceCreatedBy", fields: [preparedById], references: [id])
+  reviewedBy               User?         @relation("InvoiceReviewedBy", fields: [reviewedById], references: [id])
+  documents                InvoiceDocument[]
+  submissionEvents         InvoiceSubmissionEvent[]
+  paymentAllocations       PaymentAllocation[]
+  collectionFollowups      CollectionFollowup[]
+  creditNotes              CreditNote[]
+  emailActivity            EmailActivity[]
+
+  @@unique([invoiceNumber, clientId])
+  @@index([clientId])
+  @@index([regionId])
+  @@index([siteId])
+  @@index([status])
+  @@index([billingMonth])
+  @@index([financialYear])
+  @@index([dueDate])
+  @@index([isCancelled])
+  @@map("invoices")
+}
+
+model InvoiceDocument {
+  id           String          @id @default(uuid())
+  invoiceId    String
+  fileName     String
+  fileUrl      String
+  fileSize     Int
+  mimeType     String
+  storageProvider StorageProvider @default(CLOUDINARY)
+  storageKey   String?
+  documentType String?         // "INVOICE", "SUPPORTING", "SUBMISSION_PROOF", "OTHER"
+  uploadedById String?
+  uploadedAt   DateTime        @default(now())
+  isDeleted    Boolean         @default(false)
+  deletedAt    DateTime?
+
+  invoice      Invoice         @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+  @@map("invoice_documents")
+}
+
+model InvoiceSubmissionEvent {
+  id                String   @id @default(uuid())
+  invoiceId         String
+  eventType         String   // "SUBMITTED", "RESUBMITTED", "ACKNOWLEDGED", "REJECTED"
+  eventDate         DateTime
+  submittedById     String?
+  submissionChannel String?
+  referenceNumber   String?
+  notes             String?
+  documentUrl       String?
+  createdAt         DateTime @default(now())
+
+  invoice           Invoice  @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+  @@map("invoice_submission_events")
+}
+
+// ─── SUBMISSION TARGETS ───────────────────────────────────────────────────────
+
+model SubmissionTarget {
+  id                    String   @id @default(uuid())
+  siteId                String
+  billingMonth          String   // YYYY-MM
+  targetDate            DateTime
+  targetBasis           String?  // "MANUAL", "SITE_RULE", "CLIENT_RULE"
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  createdById           String?
+
+  site                  Site     @relation(fields: [siteId], references: [id])
+
+  @@unique([siteId, billingMonth])
+  @@index([siteId])
+  @@index([billingMonth])
+  @@map("submission_targets")
+}
+
+// ─── PAYMENT TERMS ────────────────────────────────────────────────────────────
+
+model PaymentTermsOverride {
+  id              String              @id @default(uuid())
+  clientId        String
+  siteId          String?
+  contractId      String?
+  termsDays       Int
+  trigger         PaymentTermsTrigger @default(SUBMISSION_DATE)
+  effectiveFrom   DateTime
+  effectiveTo     DateTime?
+  remarks         String?
+  createdAt       DateTime            @default(now())
+  createdById     String?
+
+  client          Client              @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@map("payment_terms_overrides")
+}
+
+// ─── PAYMENT RECEIPTS & ALLOCATIONS ──────────────────────────────────────────
+
+model PaymentReceipt {
+  id               String        @id @default(uuid())
+  receiptReference String        @unique
+  receiptDate      DateTime
+  amountReceived   Decimal       @db.Decimal(15, 2)
+  bankReference    String?
+  utrNumber        String?
+  paymentMode      PaymentMode   @default(NEFT)
+  clientId         String?
+  unallocatedAmount Decimal      @default(0) @db.Decimal(15, 2)
+  remarks          String?
+  recordedById     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  recordedBy       User?         @relation("ReceiptRecordedBy", fields: [recordedById], references: [id])
+  allocations      PaymentAllocation[]
+
+  @@index([clientId])
+  @@index([receiptDate])
+  @@map("payment_receipts")
+}
+
+model PaymentAllocation {
+  id               String         @id @default(uuid())
+  receiptId        String
+  invoiceId        String
+  allocatedAmount  Decimal        @db.Decimal(15, 2)
+  allocationDate   DateTime       @default(now())
+  remarks          String?
+  createdById      String?
+  createdAt        DateTime       @default(now())
+
+  receipt          PaymentReceipt @relation(fields: [receiptId], references: [id])
+  invoice          Invoice        @relation(fields: [invoiceId], references: [id])
+
+  @@index([receiptId])
+  @@index([invoiceId])
+  @@map("payment_allocations")
+}
+
+model CreditNote {
+  id              String   @id @default(uuid())
+  creditNoteNumber String  @unique
+  invoiceId       String
+  amount          Decimal  @db.Decimal(15, 2)
+  reason          String
+  issueDate       DateTime
+  status          String   @default("ISSUED") // ISSUED, APPLIED, CANCELLED
+  appliedAmount   Decimal  @default(0) @db.Decimal(15, 2)
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+  @@map("credit_notes")
+}
+
+// ─── COLLECTION FOLLOW-UPS ────────────────────────────────────────────────────
+
+model CollectionFollowup {
+  id               String   @id @default(uuid())
+  invoiceId        String
+  followupDate     DateTime
+  nextFollowupDate DateTime?
+  remarks          String
+  actionTaken      String?
+  followupChannel  String?  // "EMAIL", "PHONE", "MEETING", "OTHER"
+  createdById      String?
+  createdAt        DateTime @default(now())
+
+  invoice          Invoice  @relation(fields: [invoiceId], references: [id])
+  createdBy        User?    @relation("FollowupCreatedBy", fields: [createdById], references: [id])
+
+  @@index([invoiceId])
+  @@map("collection_followups")
+}
+
+// ─── EMAIL INTEGRATION ────────────────────────────────────────────────────────
+
+model EmailIntegration {
+  id                  String         @id @default(uuid())
+  userId              String         @unique
+  microsoftAccountId  String?
+  accessToken         String?        // encrypted at application layer
+  refreshToken        String?        // encrypted at application layer
+  tokenExpiresAt      DateTime?
+  syncStatus          EmailSyncStatus @default(PENDING_SETUP)
+  lastSyncAt          DateTime?
+  mailboxEmail        String?
+  graphSubscriptionId String?
+  subscriptionExpiry  DateTime?
+  errorMessage        String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  user                User            @relation(fields: [userId], references: [id])
+
+  @@map("email_integrations")
+}
+
+model EmailActivity {
+  id                  String   @id @default(uuid())
+  invoiceId           String?
+  siteId              String?
+  regionId            String?
+  sender              String
+  recipient           String
+  subject             String
+  bodyPreview         String?
+  sentAt              DateTime?
+  graphMessageId      String?
+  internetMessageId   String?
+  deliveryStatus      String?
+  relatedAction       String?
+  notificationType    String?
+  syncedAt            DateTime @default(now())
+  createdAt           DateTime @default(now())
+
+  invoice             Invoice? @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+  @@index([siteId])
+  @@index([sentAt])
+  @@map("email_activity")
+}
+
+// ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
+
+model NotificationRule {
+  id                  String              @id @default(uuid())
+  name                String
+  triggerEvent        String
+  channel             NotificationChannel @default(BOTH)
+  recipientRoles      String[]
+  customRecipients    String[]
+  templateSubject     String?
+  templateBody        String?
+  isActive            Boolean             @default(true)
+  frequencyHours      Int?
+  escalationAfterDays Int?
+  escalationRecipient String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  createdById         String?
+
+  logs                NotificationLog[]
+
+  @@index([triggerEvent])
+  @@map("notification_rules")
+}
+
+model NotificationLog {
+  id               String             @id @default(uuid())
+  ruleId           String?
+  invoiceId        String?
+  userId           String?
+  channel          NotificationChannel
+  recipient        String
+  subject          String?
+  status           NotificationStatus @default(PENDING)
+  errorMessage     String?
+  sentAt           DateTime?
+  retryCount       Int                @default(0)
+  createdAt        DateTime           @default(now())
+
+  rule             NotificationRule?  @relation(fields: [ruleId], references: [id])
+  user             User?              @relation("NotificationUser", fields: [userId], references: [id])
+
+  @@index([invoiceId])
+  @@index([status])
+  @@map("notification_logs")
+}
+
+// ─── IMPORT JOBS ──────────────────────────────────────────────────────────────
+
+model ImportJob {
+  id               String          @id @default(uuid())
+  importType       String          // "PROJECTIONS", "SITES", "INVOICES", etc.
+  fileName         String
+  fileUrl          String?
+  status           ImportJobStatus @default(PENDING)
+  totalRows        Int             @default(0)
+  successRows      Int             @default(0)
+  errorRows        Int             @default(0)
+  validationErrors Json?
+  importLog        Json?
+  createdById      String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime        @default(now())
+
+  createdBy        User?           @relation("ImportJobCreatedBy", fields: [createdById], references: [id])
+
+  @@index([importType])
+  @@index([status])
+  @@map("import_jobs")
+}
+
+// ─── AUDIT LOGS ───────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id            String      @id @default(uuid())
+  userId        String?
+  action        AuditAction
+  recordType    String
+  recordId      String
+  previousValues Json?
+  newValues     Json?
+  changeReason  String?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime    @default(now())
+
+  user          User?       @relation("AuditUser", fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([recordType])
+  @@index([recordId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─── SYSTEM SETTINGS ──────────────────────────────────────────────────────────
+
+model SystemSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  @@map("system_settings")
+}
+
+// ─── HOLIDAYS ─────────────────────────────────────────────────────────────────
+
+model PublicHoliday {
+  id          String   @id @default(uuid())
+  date        DateTime
+  name        String
+  region      String?  // null = national
+  year        Int
+  createdAt   DateTime @default(now())
+
+  @@unique([date, region])
+  @@index([year])
+  @@map("public_holidays")
+}
