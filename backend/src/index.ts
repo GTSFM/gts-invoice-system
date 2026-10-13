@@ -122,6 +122,11 @@ async function start() {
   try {
     await prisma.$connect();
     logger.info('Database connected.');
+    
+    // Auto-seed initial admin and demo data if not already present
+    const { autoSeedDatabase } = await import('./services/autoSeed');
+    await autoSeedDatabase();
+
     app.listen(PORT, () => {
       logger.info(`GTS Invoice API running on port ${PORT} [${process.env.NODE_ENV}]`);
     });
