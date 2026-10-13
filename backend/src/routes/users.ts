@@ -370,7 +370,7 @@ usersRouter.post(
       }
 
       // Replace all assignments in a transaction
-      const assignments = await prisma.$transaction(async (tx) => {
+      const assignments = await prisma.$transaction(async (tx: any) => {
         await tx.userRegionAssignment.deleteMany({ where: { userId: user.id } });
         if (regionIds.length > 0) {
           await tx.userRegionAssignment.createMany({
@@ -436,7 +436,7 @@ usersRouter.post(
       }
 
       // Replace all assignments in a transaction
-      const assignments = await prisma.$transaction(async (tx) => {
+      const assignments = await prisma.$transaction(async (tx: any) => {
         await tx.userSiteAssignment.deleteMany({ where: { userId: user.id } });
         if (siteIds.length > 0) {
           await tx.userSiteAssignment.createMany({
