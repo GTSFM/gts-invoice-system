@@ -37,8 +37,9 @@ services:
         value: 5
 
   # ── Frontend Static Site ──────────────────────────────────────────────────
-  - type: static
+  - type: web
     name: gts-invoice-frontend
+    runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
