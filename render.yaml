@@ -3,6 +3,7 @@ services:
   - type: web
     name: gts-invoice-backend
     runtime: node
+    plan: free
     rootDir: backend
     buildCommand: npm install && npm run build && npx prisma generate
     startCommand: npx prisma migrate deploy && npm start
@@ -34,22 +35,12 @@ services:
         value: 3
       - key: VARIANCE_TOLERANCE_PERCENT
         value: 5
-      # ── Set these manually in Render Dashboard ──────────────────────────
-      # MICROSOFT_CLIENT_ID
-      # MICROSOFT_CLIENT_SECRET
-      # MICROSOFT_TENANT_ID
-      # MICROSOFT_REDIRECT_URI
-      # CLOUDINARY_CLOUD_NAME
-      # CLOUDINARY_API_KEY
-      # CLOUDINARY_API_SECRET
-      # DEFAULT_ADMIN_EMAIL
-      # DEFAULT_ADMIN_PASSWORD (CHANGE IMMEDIATELY AFTER FIRST LOGIN)
-      # CORS_ORIGINS (set to your frontend URL)
 
   # ── Frontend ────────────────────────────────────────────────────────────────
   - type: web
     name: gts-invoice-frontend
     runtime: static
+    plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
@@ -66,4 +57,4 @@ databases:
   - name: gts-invoice-db
     databaseName: gts_invoice
     user: gts_invoice_user
-    plan: starter
+    plan: free
