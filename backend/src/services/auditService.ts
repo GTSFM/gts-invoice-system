@@ -1,5 +1,6 @@
 import { prisma } from '../config/database';
 import { AuditAction } from '@prisma/client';
+import { logger } from '../index';
 
 interface AuditOptions {
   userId?: string;
@@ -32,6 +33,6 @@ export async function auditLog(opts: AuditOptions): Promise<void> {
     });
   } catch (err) {
     // Audit log failures must not break the main operation
-    console.error('Audit log write failed:', err);
+    logger.error('Audit log write failed: ' + String(err));
   }
 }

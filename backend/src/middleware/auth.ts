@@ -10,6 +10,9 @@ export interface AuthenticatedRequest extends Request {
     role: UserRole;
     name: string;
   };
+  headers: Request['headers'];
+  params: Request['params'];
+  ip?: string;
 }
 
 export function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
