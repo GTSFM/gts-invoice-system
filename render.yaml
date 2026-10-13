@@ -5,8 +5,8 @@ services:
     runtime: node
     plan: free
     rootDir: backend
-    buildCommand: npm install --include=dev && npx prisma generate && npm run build
-    startCommand: npx prisma migrate deploy && npm start
+    buildCommand: chmod -R +x node_modules/.bin || true; npm install && ./node_modules/.bin/prisma generate && npm run build
+    startCommand: ./node_modules/.bin/prisma migrate deploy && npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
@@ -41,7 +41,7 @@ services:
     name: gts-invoice-frontend
     runtime: static
     rootDir: frontend
-    buildCommand: npm install --include=dev && npm run build
+    buildCommand: npm install && npm run build
     staticPublishPath: dist
     routes:
       - type: rewrite
