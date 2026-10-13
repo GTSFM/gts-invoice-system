@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/authStore';
+import api from '../services/api';
 import GTSLogo from '../components/ui/GTSLogo';
 import { Lock, Mail, AlertCircle, ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -19,7 +20,8 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await login(email, password);
+      const res = await api.post<{ token: string; user: any }>('/api/auth/login', { email, password });
+      login(res.data.token, res.data.user);
       toast.success('Welcome back to GTS Invoice System');
       navigate('/dashboard');
     } catch (err: any) {
