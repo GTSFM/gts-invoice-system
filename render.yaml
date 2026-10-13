@@ -5,7 +5,7 @@ services:
     runtime: node
     plan: free
     rootDir: backend
-    buildCommand: chmod -R +x node_modules/.bin || true; npm install && ./node_modules/.bin/prisma generate && npm run build
+    buildCommand: chmod -R +x node_modules/.bin || true; npm install --include=dev && ./node_modules/.bin/prisma generate && npm run build
     startCommand: ./node_modules/.bin/prisma migrate deploy && npm start
     healthCheckPath: /health
     envVars:

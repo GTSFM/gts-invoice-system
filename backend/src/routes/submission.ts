@@ -120,14 +120,14 @@ submissionRouter.get(
       ]);
 
       // Fetch SubmissionTarget overrides for site+month combos
-      const siteMonthPairs = invoices.map((inv) => ({
+      const siteMonthPairs = invoices.map((inv: any) => ({
         siteId: inv.siteId,
         billingMonth: inv.billingMonth,
       }));
 
       const targets = await prisma.submissionTarget.findMany({
         where: {
-          OR: siteMonthPairs.map((pair) => ({ siteId: pair.siteId, billingMonth: pair.billingMonth })),
+          OR: siteMonthPairs.map((pair: any) => ({ siteId: pair.siteId, billingMonth: pair.billingMonth })),
         },
         select: { siteId: true, billingMonth: true, targetDate: true },
       });
@@ -137,7 +137,7 @@ submissionRouter.get(
         targetMap.set(`${t.siteId}__${t.billingMonth}`, t.targetDate);
       }
 
-      const data = invoices.map((inv) => {
+      const data = invoices.map((inv: any) => {
         const overrideTarget = targetMap.get(`${inv.siteId}__${inv.billingMonth}`) ?? null;
         const targetDate = overrideTarget ?? inv.submissionTargetDate ?? null;
         const actualDate = inv.actualSubmissionDate ?? null;
@@ -159,7 +159,7 @@ submissionRouter.get(
 
       // Filter by submission status if requested
       const filtered = statusFilter
-        ? data.filter((d) => d.submissionStatus === statusFilter)
+        ? data.filter((d: any) => d.submissionStatus === statusFilter)
         : data;
 
       res.json({
@@ -209,14 +209,14 @@ submissionRouter.get(
       });
 
       // Fetch target overrides
-      const siteMonthPairs = invoices.map((inv) => ({
+      const siteMonthPairs = invoices.map((inv: any) => ({
         siteId: inv.siteId,
         billingMonth: inv.billingMonth,
       }));
       const targets = siteMonthPairs.length
         ? await prisma.submissionTarget.findMany({
             where: {
-              OR: siteMonthPairs.map((p) => ({ siteId: p.siteId, billingMonth: p.billingMonth })),
+              OR: siteMonthPairs.map((p: any) => ({ siteId: p.siteId, billingMonth: p.billingMonth })),
             },
             select: { siteId: true, billingMonth: true, targetDate: true },
           })
