@@ -36,11 +36,9 @@ services:
       - key: VARIANCE_TOLERANCE_PERCENT
         value: 5
 
-  # ── Frontend ────────────────────────────────────────────────────────────────
-  - type: web
+  # ── Frontend Static Site ──────────────────────────────────────────────────
+  - type: static
     name: gts-invoice-frontend
-    runtime: static
-    plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
